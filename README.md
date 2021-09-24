@@ -19,3 +19,9 @@ graph build subgraph.yaml
 
 graph deploy  --product hosted-service --ipfs https://api.thegraph.com/ipfs/ --node https://api.thegraph.com/deploy/ <GITHUB_USER/SUBGRAPH_NAME>
 ```
+
+## Contracts
+
+- 0x88B48F654c30e99bc2e4A1559b4Dcf1aD93FA656
+- 0xac5ebbbf4ebe1151827e33efcd1753b6b5870924 : Up Only Founders
+- 0xaf7da83420df32bf17978cf3f66f677582c482b1

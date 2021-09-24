@@ -6,7 +6,7 @@ dataSources:
     name: erc721
     network: rinkeby
     source:
-      address: "0xD55Ae3A7D786Ee11Bb3f1cE7Db1d3b9C2BB951B1"
+      address: "0xaf7da83420df32bf17978cf3f66f677582c482b1"
       abi: IERC721
       startBlock: 9342800 
     mapping:
