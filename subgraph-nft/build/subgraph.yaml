@@ -4,11 +4,11 @@ schema:
 dataSources:
   - kind: ethereum/contract
     name: erc721
-    network: rinkeby
+    network: mainnet
     source:
-      address: "0xaf7da83420df32bf17978cf3f66f677582c482b1"
+      address: "0xf8a7b3cb7427e68154862df3ae96687bbfac8f47"
       abi: IERC721
-      startBlock: 9342800
+      startBlock: 12000000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.4

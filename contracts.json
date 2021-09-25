@@ -1,0 +1,17 @@
+[
+    {
+        "BaseUri": "https://api.thegraph.com/subgraphs/name/cool-develope/cryptopunks",
+        "address": "0xf8a7b3cb7427e68154862df3ae96687bbfac8f47",
+        "Chain": "Ethereum"
+    },
+    {
+        "BaseUri": "https://api.thegraph.com/subgraphs/name/cool-develope/cryptokitties",
+        "address": "0x43d29d6dc3346a812b10b572ffb52fc7668bf8ba",
+        "Chain": "Ethereum"
+    },
+    {
+        "BaseUri": "https://api.thegraph.com/subgraphs/name/cool-develope/galaxy_eggs",
+        "address": "0xa08126f5e1ed91a635987071e6ff5eb2aeb67c48",
+        "Chain": "Ethereum"
+    }
+]
