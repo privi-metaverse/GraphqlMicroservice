@@ -1,13 +1,14 @@
 import admin from 'firebase-admin'
 import {getContract, getTokens} from './query'
 
-const Moralis = require('moralis/node')
+
 import collections from "./collections";
+const Moralis = require('moralis/node')
 const axios = require('axios');
 
 const contracts = require('../../contracts.json')
 
-require('dotenv').config({ path: __dirname + '/../../.env' })
+require('dotenv').config({path: __dirname + '/../../.env'})
 
 const getFileTypeTimeout = 3000;
 
@@ -39,7 +40,7 @@ export const initContracts = async () => {
     contracts.forEach(async (contract: Contract) => {
         try {
             const data = await getContract(contract.BaseUri, contract.address)
-            
+
             await store.collection('NftMasterCollection').doc(contract.address).set(
                 {
                     "BaseUri": contract.BaseUri,
@@ -53,7 +54,7 @@ export const initContracts = async () => {
             console.log('eee: ', error)
         }
     });
-    
+
 }
 
 const getNFTUsers = async () => {
@@ -68,13 +69,13 @@ const getNFTUsers = async () => {
     return users
 }
 
-const stringContainsArrayItem = (str : string, arr : string[]) => {
+const stringContainsArrayItem = (str: string, arr: string[]) => {
     return arr.some(v => str.includes(v));
 };
 
-const getIPFSFileType = async (url : string) => {
+const getIPFSFileType = async (url: string) => {
     try {
-        const response = await axios.head(url, { timeout: getFileTypeTimeout });
+        const response = await axios.head(url, {timeout: getFileTypeTimeout});
         if (response.headers['content-type']) {
             return response.headers['content-type'];
         }
@@ -83,7 +84,7 @@ const getIPFSFileType = async (url : string) => {
     }
 };
 
-const storeUserNFTsFromMoralis = async (uid : string) => {
+const storeUserNFTsFromMoralis = async (uid: string) => {
     try {
         const db = getStore();
 
@@ -100,7 +101,7 @@ const storeUserNFTsFromMoralis = async (uid : string) => {
 
         const address = userData.address;
 
-        const userEthNFTs = await Moralis.Web3API.account.getNFTs({ address: address });
+        const userEthNFTs = await Moralis.Web3API.account.getNFTs({address: address});
 
         const userNFTsWithData: any[] = [];
 
@@ -108,7 +109,7 @@ const storeUserNFTsFromMoralis = async (uid : string) => {
             const allowedExtensions: string[] = ['.mp4', '.mp3', '.jpg', 'jpeg', '.png', '.ogg', '.tiff', '.tif', '.bmp', '.wav', '.aac', '.flac', '.gif', 'ipfs://'];
             for (const nft of userEthNFTs.result) {
 
-                const ob: any = { ...nft };
+                const ob: any = {...nft};
 
                 let dataFound = false;
 
@@ -163,13 +164,18 @@ const storeUserNFTsFromMoralis = async (uid : string) => {
                 }
             }
 
-            db.collection(collections.UserNFTTest).doc(uid).collection(collections.owned).listDocuments().then(val => {
-                val.map((val) => {
-                    val.delete();
-                });
+            db.collection(collections.UserNFTTest).doc(uid).delete();
+
+            await db.runTransaction(async transaction => {
+                transaction.set(db.collection(collections.UserNFTTest).doc(uid),
+                    {
+                        id: uid,
+                    });
             });
 
             const createdCollections: string[] = [];
+            const createdMasterAddresses: string[] = [];
+            const createdUserAddresses: string[] = [];
 
             for (const nft of userNFTsWithData) {
                 if (nft == null)
@@ -193,14 +199,45 @@ const storeUserNFTsFromMoralis = async (uid : string) => {
                     createdCollections.push(nft.token_address);
                 }
 
-                const nftMasterRef = await db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).collection('NFT').doc(nft.token_id).get();
-                const nftMasterData = nftMasterRef.data();
+                if(!createdMasterAddresses.includes(nft.token_address)){
+                    const nftMasterRef = await db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).get();
+                    const nftMasterData = nftMasterRef.data();
 
-                if (nftMasterData == null) {
+                    if (nftMasterData == null) {
+                        await db.runTransaction(async transaction => {
+                            transaction.set(db.collection(collections.NftMasterCollectionTest).doc(nft.token_address),
+                                {address: nft.token_address});
+                        });
+                    }
+
+                    createdMasterAddresses.push(nft.token_address);
+                }
+
+
+                const nftMasterNFTAddressRef = await db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).collection('NFT').doc(nft.token_id).get();
+                const nftMasterNFTAddressData = nftMasterNFTAddressRef.data();
+
+                if(nftMasterNFTAddressData == null){
                     await db.runTransaction(async transaction => {
                         transaction.set(db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).collection('NFT').doc(nft.token_id),
                             nft);
                     });
+                }
+
+                if(!createdUserAddresses.includes(nft.token_address)){
+                    const nftUserRef = await db.collection(collections.UserNFTTest).doc(uid).collection('Owned').doc(nft.token_address).get();
+                    const nftUserData = nftUserRef.data();
+
+                    if(nftUserData == null){
+                        await db.runTransaction(async transaction => {
+                            transaction.set(db.collection(collections.UserNFTTest).doc(uid).collection('Owned').doc(nft.token_address),
+                                {
+                                    address: nft.token_address,
+                                });
+                        });
+                    }
+
+                    createdUserAddresses.push(nft.token_address);
                 }
 
                 await db.runTransaction(async transaction => {
