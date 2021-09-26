@@ -15,8 +15,12 @@ export default {
     userNFT: 'UserNFT',
     owned: 'Owned',
     collectionIds: 'collectionIds',
-    NftMasterCollectionTest: 'NftMasterCollectionTest',
-    UserNFTTest: 'UserNFTTest',
+
+    NftMasterCollectionTestnet: 'NftMasterCollectionTestnet',
+    UserNFTTestnet: 'UserNFTTestnet',
+
+    NftMasterCollectionMainnet: 'NftMasterCollectionMainnet',
+    UserNFTMainnet: 'UserNFTMainnet',
 
     sythethicFractionalised: 'sytheticFractionalised',
 
