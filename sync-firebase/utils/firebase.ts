@@ -1,9 +1,15 @@
 import admin from 'firebase-admin'
-import { getContract, getTokens } from './query'
+import {getContract, getTokens} from './query'
+
+const Moralis = require('moralis/node')
+import collections from "./collections";
+const axios = require('axios');
 
 const contracts = require('../../contracts.json')
 
 require('dotenv').config({ path: __dirname + '/../../.env' })
+
+const getFileTypeTimeout = 3000;
 
 interface Contract {
     BaseUri: string
@@ -61,6 +67,157 @@ const getNFTUsers = async () => {
 
     return users
 }
+
+const stringContainsArrayItem = (str : string, arr : string[]) => {
+    return arr.some(v => str.includes(v));
+};
+
+const getIPFSFileType = async (url : string) => {
+    try {
+        const response = await axios.head(url, { timeout: getFileTypeTimeout });
+        if (response.headers['content-type']) {
+            return response.headers['content-type'];
+        }
+    } catch (err) {
+        return null;
+    }
+};
+
+const storeUserNFTsFromMoralis = async (uid : string) => {
+    try {
+        const db = getStore();
+
+        Moralis.initialize(process.env.MORALIS_KEY);
+        Moralis.serverURL = process.env.MORALIS_SERVER;
+
+        const userSnap = await db.collection(collections.user).doc(uid).get();
+        const userData: any = userSnap.data();
+
+        if (userData == null) {
+            console.log('cant find user with given uid');
+            return null;
+        }
+
+        const address = userData.address;
+
+        const userEthNFTs = await Moralis.Web3API.account.getNFTs({ address: address });
+
+        const userNFTsWithData: any[] = [];
+
+        if (userEthNFTs != null) {
+            const allowedExtensions: string[] = ['.mp4', '.mp3', '.jpg', 'jpeg', '.png', '.ogg', '.tiff', '.tif', '.bmp', '.wav', '.aac', '.flac', '.gif', 'ipfs://'];
+            for (const nft of userEthNFTs.result) {
+
+                const ob: any = { ...nft };
+
+                let dataFound = false;
+
+                try {
+                    nft.metadata = JSON.parse(nft.metadata);
+
+                    if (nft.metadata != null) {
+                        // Check for various NFT format fields in metadata (image, animation)
+                        if (
+                            'animation_url' in nft.metadata &&
+                            nft.metadata.animation_url &&
+                            stringContainsArrayItem(nft.metadata.animation_url, allowedExtensions)
+                        ) {
+                            if (nft.metadata.animation_url.includes('ipfs://')) {
+                                nft.metadata.animation_url = nft.metadata.animation_url.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                            }
+                            ob.animation_type = await getIPFSFileType(nft.metadata.animation_url);
+                            ob.animation_url = nft.metadata.animation_url;
+                            dataFound = true;
+                        }
+
+                        if (
+                            'image' in nft.metadata &&
+                            nft.metadata.image &&
+                            stringContainsArrayItem(nft.metadata.image, allowedExtensions)
+                        ) {
+                            if (nft.metadata.image.includes('ipfs://')) {
+                                nft.metadata.image = nft.metadata.image.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                            }
+                            ob.content_type = await getIPFSFileType(nft.metadata.image);
+                            ob.content_url = nft.metadata.image;
+                            dataFound = true;
+                        }
+
+                        if (dataFound) {
+                            userNFTsWithData.push(ob);
+                        }
+                    }
+                } catch
+                    (err) {
+                    console.log('cant parse metadata from ERC721 NFT, error: ' + err);
+                }
+
+                // If data was not found in metadata, maybe it's in token_uri
+                if (!dataFound && stringContainsArrayItem(nft.token_uri, allowedExtensions)) {
+                    if (nft.token_uri.includes('ipfs://')) {
+                        nft.token_uri.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                    }
+                    ob.content_type = await getIPFSFileType(nft.token_uri);
+                    ob.content_url = nft.token_uri;
+                    userNFTsWithData.push(ob);
+                }
+            }
+
+            db.collection(collections.UserNFTTest).doc(uid).collection(collections.owned).listDocuments().then(val => {
+                val.map((val) => {
+                    val.delete();
+                });
+            });
+
+            const createdCollections: string[] = [];
+
+            for (const nft of userNFTsWithData) {
+                if (nft == null)
+                    continue;
+
+                if (!createdCollections.includes(nft.token_address)) {
+                    const nftCollectionRef = await db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).get();
+                    const nftCollectionData = nftCollectionRef.data();
+
+                    if (nftCollectionData == null) {
+                        await db.runTransaction(async transaction => {
+                            transaction.set(db.collection(collections.NftMasterCollectionTest).doc(nft.token_address),
+                                {
+                                    Chain: 'Ethereum',
+                                    Name: nft.name,
+                                    Symbol: nft.symbol,
+                                });
+                        });
+                    }
+
+                    createdCollections.push(nft.token_address);
+                }
+
+                const nftMasterRef = await db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).collection('NFT').doc(nft.token_id).get();
+                const nftMasterData = nftMasterRef.data();
+
+                if (nftMasterData == null) {
+                    await db.runTransaction(async transaction => {
+                        transaction.set(db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).collection('NFT').doc(nft.token_id),
+                            nft);
+                    });
+                }
+
+                await db.runTransaction(async transaction => {
+                    transaction.set(db.collection(collections.UserNFTTest).doc(uid).collection('Owned').doc(nft.token_address).collection(collections.collectionIds).doc(nft.token_id),
+                        {
+                            Id: nft.token_id,
+                        });
+                });
+            }
+            return true;
+        }
+    } catch (e) {
+        console.log(e);
+    }
+    return false;
+};
+
 
 export const getNFTTokens = async () => {
     const store = getStore();
