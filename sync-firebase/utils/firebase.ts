@@ -3,6 +3,7 @@ import {getContract, getTokens} from './query'
 
 
 import collections from "./collections";
+
 const Moralis = require('moralis/node')
 const axios = require('axios');
 
@@ -73,23 +74,10 @@ const stringContainsArrayItem = (str: string, arr: string[]) => {
     return arr.some(v => str.includes(v));
 };
 
-const getIPFSFileType = async (url: string) => {
+const storeUserNFTsFromMoralis = async (uid: string, mainnet: boolean) => {
     try {
-        const response = await axios.head(url, {timeout: getFileTypeTimeout});
-        if (response.headers['content-type']) {
-            return response.headers['content-type'];
-        }
-    } catch (err) {
-        return null;
-    }
-};
-
-const storeUserNFTsFromMoralis = async (uid: string) => {
-    try {
-        const db = getStore();
-
-        Moralis.initialize(process.env.MORALIS_KEY);
-        Moralis.serverURL = process.env.MORALIS_SERVER;
+        let db = getStore();
+        let settings : any;
 
         const userSnap = await db.collection(collections.user).doc(uid).get();
         const userData: any = userSnap.data();
@@ -101,153 +89,177 @@ const storeUserNFTsFromMoralis = async (uid: string) => {
 
         const address = userData.address;
 
-        const userEthNFTs = await Moralis.Web3API.account.getNFTs({address: address});
+        if (mainnet) {
+            settings = {
+                moralisKey: process.env.MORALIS_MAINNET_KEY,
+                moralisServerURL: process.env.MORALIS_MAINNET_SERVER,
+                chains: ['eth', 'matic', 'bsc'],
+                chainsFullName : ['Mainnet', 'Matic', 'BSC'],
+                masterCollection: collections.NftMasterCollectionMainnet,
+                userCollection: collections.UserNFTMainnet,
+            };
+        } else {
+            settings = {
+                moralisKey: process.env.MORALIS_TESTNET_KEY,
+                moralisServerURL: process.env.MORALIS_TESTNET_SERVER,
+                chains: ['rinkeby', 'mumbai'],
+                chainsFullName : ['Rinkeby', 'Mumbai'],
+                masterCollection: collections.NftMasterCollectionTestnet,
+                userCollection: collections.UserNFTTestnet,
+            };
+        }
 
-        const userNFTsWithData: any[] = [];
+        Moralis.initialize(settings.moralisKey);
+        Moralis.serverURL = settings.moralisServerURL;
 
-        if (userEthNFTs != null) {
-            const allowedExtensions: string[] = ['.mp4', '.mp3', '.jpg', 'jpeg', '.png', '.ogg', '.tiff', '.tif', '.bmp', '.wav', '.aac', '.flac', '.gif', 'ipfs://'];
-            for (const nft of userEthNFTs.result) {
+        for (let i = 0; i<settings.chains.length; i++) {
+            let chain = settings.chains[i];
+            let chainName = settings.chainsFullName[i];
 
-                const ob: any = {...nft};
+            const userEthNFTs = await Moralis.Web3API.account.getNFTs({address: address, chain: chain});
 
-                let dataFound = false;
+            const userNFTsWithData: any[] = [];
 
-                try {
-                    nft.metadata = JSON.parse(nft.metadata);
+            if (userEthNFTs != null) {
+                const allowedExtensions: string[] = ['.mp4', '.mp3', '.jpg', 'jpeg', '.png', '.ogg', '.tiff', '.tif', '.bmp', '.wav', '.aac', '.flac', '.gif', 'ipfs://'];
+                for (const nft of userEthNFTs.result) {
 
-                    if (nft.metadata != null) {
-                        // Check for various NFT format fields in metadata (image, animation)
-                        if (
-                            'animation_url' in nft.metadata &&
-                            nft.metadata.animation_url &&
-                            stringContainsArrayItem(nft.metadata.animation_url, allowedExtensions)
-                        ) {
-                            if (nft.metadata.animation_url.includes('ipfs://')) {
-                                nft.metadata.animation_url = nft.metadata.animation_url.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                    const ob: any = {...nft};
+
+                    let dataFound = false;
+
+                    try {
+                        nft.metadata = JSON.parse(nft.metadata);
+
+                        if (nft.metadata != null) {
+                            // Check for various NFT format fields in metadata (image, animation)
+                            if (
+                                'animation_url' in nft.metadata &&
+                                nft.metadata.animation_url &&
+                                stringContainsArrayItem(nft.metadata.animation_url, allowedExtensions)
+                            ) {
+                                if (nft.metadata.animation_url.includes('ipfs://')) {
+                                    nft.metadata.animation_url = nft.metadata.animation_url.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                                }
+                                ob.animation_url = nft.metadata.animation_url;
+                                dataFound = true;
                             }
-                            ob.animation_type = await getIPFSFileType(nft.metadata.animation_url);
-                            ob.animation_url = nft.metadata.animation_url;
-                            dataFound = true;
-                        }
 
-                        if (
-                            'image' in nft.metadata &&
-                            nft.metadata.image &&
-                            stringContainsArrayItem(nft.metadata.image, allowedExtensions)
-                        ) {
-                            if (nft.metadata.image.includes('ipfs://')) {
-                                nft.metadata.image = nft.metadata.image.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                            if (
+                                'image' in nft.metadata &&
+                                nft.metadata.image &&
+                                stringContainsArrayItem(nft.metadata.image, allowedExtensions)
+                            ) {
+                                if (nft.metadata.image.includes('ipfs://')) {
+                                    nft.metadata.image = nft.metadata.image.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                                }
+                                ob.content_url = nft.metadata.image;
+                                dataFound = true;
                             }
-                            ob.content_type = await getIPFSFileType(nft.metadata.image);
-                            ob.content_url = nft.metadata.image;
-                            dataFound = true;
+
+                            if (dataFound) {
+                                userNFTsWithData.push(ob);
+                            }
                         }
+                    } catch
+                        (err) {
+                        console.log('cant parse metadata from ERC721 NFT, error: ' + err);
+                    }
 
-                        if (dataFound) {
-                            userNFTsWithData.push(ob);
+                    // If data was not found in metadata, maybe it's in token_uri
+                    if (!dataFound && nft.token_uri != null && stringContainsArrayItem(nft.token_uri, allowedExtensions)) {
+                        if (nft.token_uri.includes('ipfs://')) {
+                            nft.token_uri.replace('ipfs://', 'https://ipfs.io/ipfs/');
                         }
+                        ob.content_url = nft.token_uri;
+                        userNFTsWithData.push(ob);
                     }
-                } catch
-                    (err) {
-                    console.log('cant parse metadata from ERC721 NFT, error: ' + err);
                 }
 
-                // If data was not found in metadata, maybe it's in token_uri
-                if (!dataFound && stringContainsArrayItem(nft.token_uri, allowedExtensions)) {
-                    if (nft.token_uri.includes('ipfs://')) {
-                        nft.token_uri.replace('ipfs://', 'https://ipfs.io/ipfs/');
-                    }
-                    ob.content_type = await getIPFSFileType(nft.token_uri);
-                    ob.content_url = nft.token_uri;
-                    userNFTsWithData.push(ob);
-                }
-            }
-
-            db.collection(collections.UserNFTTest).doc(uid).delete();
-
-            await db.runTransaction(async transaction => {
-                transaction.set(db.collection(collections.UserNFTTest).doc(uid),
-                    {
-                        id: uid,
-                    });
-            });
-
-            const createdCollections: string[] = [];
-            const createdMasterAddresses: string[] = [];
-            const createdUserAddresses: string[] = [];
-
-            for (const nft of userNFTsWithData) {
-                if (nft == null)
-                    continue;
-
-                if (!createdCollections.includes(nft.token_address)) {
-                    const nftCollectionRef = await db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).get();
-                    const nftCollectionData = nftCollectionRef.data();
-
-                    if (nftCollectionData == null) {
-                        await db.runTransaction(async transaction => {
-                            transaction.set(db.collection(collections.NftMasterCollectionTest).doc(nft.token_address),
-                                {
-                                    Chain: 'Ethereum',
-                                    Name: nft.name,
-                                    Symbol: nft.symbol,
-                                });
-                        });
-                    }
-
-                    createdCollections.push(nft.token_address);
-                }
-
-                if(!createdMasterAddresses.includes(nft.token_address)){
-                    const nftMasterRef = await db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).get();
-                    const nftMasterData = nftMasterRef.data();
-
-                    if (nftMasterData == null) {
-                        await db.runTransaction(async transaction => {
-                            transaction.set(db.collection(collections.NftMasterCollectionTest).doc(nft.token_address),
-                                {address: nft.token_address});
-                        });
-                    }
-
-                    createdMasterAddresses.push(nft.token_address);
-                }
-
-
-                const nftMasterNFTAddressRef = await db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).collection('NFT').doc(nft.token_id).get();
-                const nftMasterNFTAddressData = nftMasterNFTAddressRef.data();
-
-                if(nftMasterNFTAddressData == null){
-                    await db.runTransaction(async transaction => {
-                        transaction.set(db.collection(collections.NftMasterCollectionTest).doc(nft.token_address).collection('NFT').doc(nft.token_id),
-                            nft);
-                    });
-                }
-
-                if(!createdUserAddresses.includes(nft.token_address)){
-                    const nftUserRef = await db.collection(collections.UserNFTTest).doc(uid).collection('Owned').doc(nft.token_address).get();
-                    const nftUserData = nftUserRef.data();
-
-                    if(nftUserData == null){
-                        await db.runTransaction(async transaction => {
-                            transaction.set(db.collection(collections.UserNFTTest).doc(uid).collection('Owned').doc(nft.token_address),
-                                {
-                                    address: nft.token_address,
-                                });
-                        });
-                    }
-
-                    createdUserAddresses.push(nft.token_address);
-                }
+                db.collection(settings.userCollection).doc(uid).delete();
 
                 await db.runTransaction(async transaction => {
-                    transaction.set(db.collection(collections.UserNFTTest).doc(uid).collection('Owned').doc(nft.token_address).collection(collections.collectionIds).doc(nft.token_id),
+                    transaction.set(db.collection(settings.userCollection).doc(uid),
                         {
-                            Id: nft.token_id,
+                            id: uid,
                         });
                 });
+
+                const createdCollections: string[] = [];
+                const createdMasterAddresses: string[] = [];
+                const createdUserAddresses: string[] = [];
+
+                for (const nft of userNFTsWithData) {
+                    if (nft == null)
+                        continue;
+
+                    if (!createdCollections.includes(nft.token_address)) {
+                        const nftCollectionRef = await db.collection(settings.masterCollection).doc(nft.token_address).get();
+                        const nftCollectionData = nftCollectionRef.data();
+
+                        if (nftCollectionData == null) {
+                            await db.runTransaction(async transaction => {
+                                transaction.set(db.collection(settings.masterCollection).doc(nft.token_address),
+                                    {
+                                        Chain: chainName,
+                                        Name: nft.name,
+                                        Symbol: nft.symbol,
+                                    });
+                            });
+                        }
+
+                        createdCollections.push(nft.token_address);
+                    }
+
+                    if (!createdMasterAddresses.includes(nft.token_address)) {
+                        const nftMasterRef = await db.collection(settings.masterCollection).doc(nft.token_address).get();
+                        const nftMasterData = nftMasterRef.data();
+
+                        if (nftMasterData == null) {
+                            await db.runTransaction(async transaction => {
+                                transaction.set(db.collection(settings.masterCollection).doc(nft.token_address),
+                                    {address: nft.token_address});
+                            });
+                        }
+
+                        createdMasterAddresses.push(nft.token_address);
+                    }
+
+
+                    const nftMasterNFTAddressRef = await db.collection(settings.masterCollection).doc(nft.token_address).collection('NFT').doc(nft.token_id).get();
+                    const nftMasterNFTAddressData = nftMasterNFTAddressRef.data();
+
+                    if (nftMasterNFTAddressData == null) {
+                        await db.runTransaction(async transaction => {
+                            transaction.set(db.collection(settings.masterCollection).doc(nft.token_address).collection('NFT').doc(nft.token_id),
+                                nft);
+                        });
+                    }
+
+                    if (!createdUserAddresses.includes(nft.token_address)) {
+                        const nftUserRef = await db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address).get();
+                        const nftUserData = nftUserRef.data();
+
+                        if (nftUserData == null) {
+                            await db.runTransaction(async transaction => {
+                                transaction.set(db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address),
+                                    {
+                                        address: nft.token_address,
+                                    });
+                            });
+                        }
+
+                        createdUserAddresses.push(nft.token_address);
+                    }
+
+                    await db.runTransaction(async transaction => {
+                        transaction.set(db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address).collection(collections.collectionIds).doc(nft.token_id),
+                            {
+                                Id: nft.token_id,
+                            });
+                    });
+                }
             }
-            return true;
         }
     } catch (e) {
         console.log(e);
