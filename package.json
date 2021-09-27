@@ -15,16 +15,23 @@
     "@openzeppelin/subgraphs": "^0.1.2",
     "@types/axios": "^0.14.0",
     "axios": "^0.21.4",
+    "body-parser": "^1.19.0",
+    "cors": "^2.8.5",
     "dotenv": "^10.0.0",
+    "express": "^4.17.1",
     "firebase-admin": "^9.11.1",
+    "helmet": "^4.6.0",
     "moralis": "0.0.57",
+    "morgan": "^1.10.0",
     "nodemon": "^2.0.13",
     "ts-node": "^10.2.1",
     "typescript": "^4.4.2"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.12",
     "@types/dotenv": "^8.2.0",
     "@types/jest": "^27.0.1",
+    "@types/morgan": "^1.9.3",
     "@types/node": "^16.7.10",
     "jest": "^27.1.0",
     "ts-jest": "^27.0.5"
