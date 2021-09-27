@@ -12,7 +12,7 @@ export const storeUserNFTsFromMoralis = async (req: express.Request, res: expres
     const userSnap = await db.collection(collections.user).doc(uid).get();
     const userData: any = userSnap.data();
 
-    if (userData == null) {
+    if (!userData) {
       res.send({ success: false, message: 'cant find user with given uid' });
       return;
     }
@@ -42,26 +42,32 @@ export const storeUserNFTsFromMoralis = async (req: express.Request, res: expres
     Moralis.initialize(settings.moralisKey);
     Moralis.serverURL = settings.moralisServerURL;
 
-    for (let i = 0; i < settings.chains.length; i++) {
-      let chain = settings.chains[i];
-      let chainName = settings.chainsFullName[i];
+    db.collection(settings.userCollection).doc(uid).delete();
+    await db.runTransaction(async transaction => {
+      transaction.set(db.collection(settings.userCollection).doc(uid),
+        {
+          id: uid,
+        });
+    });
 
-      const userEthNFTs = await Moralis.Web3API.account.getNFTs({ address: address, chain: chain });
+    const userNFTsWithData: any[] = [];
 
-      const userNFTsWithData: any[] = [];
+    const userEthNFTPromise = settings.chains.map(chain => Moralis.Web3API.account.getNFTs({ address, chain }));
+    const userEthNFTResult = await Promise.all(userEthNFTPromise);
 
-      if (userEthNFTs != null) {
+    for (let i = 0; i < userEthNFTResult.length; i++) {
+      const userEthNFTs: any = userEthNFTResult[i];
+
+      if (userEthNFTs) {
         const allowedExtensions: string[] = ['.mp4', '.mp3', '.jpg', 'jpeg', '.png', '.ogg', '.tiff', '.tif', '.bmp', '.wav', '.aac', '.flac', '.gif', 'ipfs://'];
+
         for (const nft of userEthNFTs.result) {
-
-          const ob: any = { ...nft };
-
+          const ob: any = { ...nft, chainsFullName: settings.chainsFullName[i] };
           let dataFound = false;
-
           try {
             nft.metadata = JSON.parse(nft.metadata);
 
-            if (nft.metadata != null) {
+            if (nft.metadata) {
               // Check for various NFT format fields in metadata (image, animation)
               if (
                 'animation_url' in nft.metadata &&
@@ -105,91 +111,82 @@ export const storeUserNFTsFromMoralis = async (req: express.Request, res: expres
             userNFTsWithData.push(ob);
           }
         }
+      }
+    }
 
-        db.collection(settings.userCollection).doc(uid).delete();
+    const createdCollections: string[] = [];
+    const createdMasterAddresses: string[] = [];
+    const createdUserAddresses: string[] = [];
 
-        await db.runTransaction(async transaction => {
-          transaction.set(db.collection(settings.userCollection).doc(uid),
-            {
-              id: uid,
-            });
-        });
+    for (const nft of userNFTsWithData) {
+      if (!nft)
+        continue;
 
-        const createdCollections: string[] = [];
-        const createdMasterAddresses: string[] = [];
-        const createdUserAddresses: string[] = [];
+      if (!createdCollections.includes(nft.token_address)) {
+        const nftCollectionRef = await db.collection(settings.masterCollection).doc(nft.token_address).get();
+        const nftCollectionData = nftCollectionRef.data();
 
-        for (const nft of userNFTsWithData) {
-          if (nft == null)
-            continue;
-
-          if (!createdCollections.includes(nft.token_address)) {
-            const nftCollectionRef = await db.collection(settings.masterCollection).doc(nft.token_address).get();
-            const nftCollectionData = nftCollectionRef.data();
-
-            if (nftCollectionData == null) {
-              await db.runTransaction(async transaction => {
-                transaction.set(db.collection(settings.masterCollection).doc(nft.token_address),
-                  {
-                    Chain: chainName,
-                    Name: nft.name,
-                    Symbol: nft.symbol,
-                  });
-              });
-            }
-
-            createdCollections.push(nft.token_address);
-          }
-
-          if (!createdMasterAddresses.includes(nft.token_address)) {
-            const nftMasterRef = await db.collection(settings.masterCollection).doc(nft.token_address).get();
-            const nftMasterData = nftMasterRef.data();
-
-            if (nftMasterData == null) {
-              await db.runTransaction(async transaction => {
-                transaction.set(db.collection(settings.masterCollection).doc(nft.token_address),
-                  { address: nft.token_address });
-              });
-            }
-
-            createdMasterAddresses.push(nft.token_address);
-          }
-
-
-          const nftMasterNFTAddressRef = await db.collection(settings.masterCollection).doc(nft.token_address).collection('NFT').doc(nft.token_id).get();
-          const nftMasterNFTAddressData = nftMasterNFTAddressRef.data();
-
-          if (nftMasterNFTAddressData == null) {
-            await db.runTransaction(async transaction => {
-              transaction.set(db.collection(settings.masterCollection).doc(nft.token_address).collection('NFT').doc(nft.token_id),
-                nft);
-            });
-          }
-
-          if (!createdUserAddresses.includes(nft.token_address)) {
-            const nftUserRef = await db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address).get();
-            const nftUserData = nftUserRef.data();
-
-            if (nftUserData == null) {
-              await db.runTransaction(async transaction => {
-                transaction.set(db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address),
-                  {
-                    address: nft.token_address,
-                  });
-              });
-            }
-
-            createdUserAddresses.push(nft.token_address);
-          }
-
+        if (!nftCollectionData) {
           await db.runTransaction(async transaction => {
-            transaction.set(db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address).collection(collections.collectionIds).doc(nft.token_id),
+            transaction.set(db.collection(settings.masterCollection).doc(nft.token_address),
               {
-                Id: nft.token_id,
+                Chain: nft.chainsFullName,
+                Name: nft.name,
+                Symbol: nft.symbol,
               });
           });
         }
+
+        createdCollections.push(nft.token_address);
       }
+
+      if (!createdMasterAddresses.includes(nft.token_address)) {
+        const nftMasterRef = await db.collection(settings.masterCollection).doc(nft.token_address).get();
+        const nftMasterData = nftMasterRef.data();
+
+        if (nftMasterData == null) {
+          await db.runTransaction(async transaction => {
+            transaction.set(db.collection(settings.masterCollection).doc(nft.token_address),
+              { address: nft.token_address });
+          });
+        }
+
+        createdMasterAddresses.push(nft.token_address);
+      }
+
+
+      const nftMasterNFTAddressRef = await db.collection(settings.masterCollection).doc(nft.token_address).collection('NFT').doc(nft.token_id).get();
+      const nftMasterNFTAddressData = nftMasterNFTAddressRef.data();
+
+      if (nftMasterNFTAddressData == null) {
+        await db.runTransaction(async transaction => {
+          transaction.set(db.collection(settings.masterCollection).doc(nft.token_address).collection('NFT').doc(nft.token_id),
+            nft);
+        });
+      }
+
+      if (!createdUserAddresses.includes(nft.token_address)) {
+        const nftUserRef = await db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address).get();
+        const nftUserData = nftUserRef.data();
+
+        if (nftUserData == null) {
+          await db.runTransaction(async transaction => {
+            transaction.set(db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address),
+              {
+                address: nft.token_address,
+              });
+          });
+        }
+
+        createdUserAddresses.push(nft.token_address);
+      }
+
+      await db.runTransaction(async transaction => {
+        transaction.set(db.collection(settings.userCollection).doc(uid).collection('Owned').doc(nft.token_address).collection(collections.collectionIds).doc(nft.token_id),
+          {
+            Id: nft.token_id,
+          });
+      });
     }
 
     res.send({ success: true });
