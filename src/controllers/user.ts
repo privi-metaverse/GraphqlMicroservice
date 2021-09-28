@@ -6,7 +6,7 @@ import collections from '../utils/collections';
 
 export const storeUserNFTsFromMoralis = async (req: express.Request, res: express.Response) => {
   try {
-    const { uid, mainnet } = req.params;
+    const { uid, mainnet }: { uid: string, mainnet: boolean } = req.body;
     let settings: any;
 
     const userSnap = await db.collection(collections.user).doc(uid).get();

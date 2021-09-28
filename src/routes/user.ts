@@ -4,6 +4,6 @@ import * as userController from '../controllers/user';
 
 const router = express.Router();
 
-router.post('/storeUserNFTs/:uid/:mainnet', userController.storeUserNFTsFromMoralis);
+router.post('/storeUserNFTs', userController.storeUserNFTsFromMoralis);
 
 export default router;
