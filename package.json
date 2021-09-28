@@ -5,14 +5,12 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc sync-firebase/index.ts & node sync-firebase/index.js",
-    "dev": "ts-node sync-firebase/index.ts"
+    "build": "tsc & node build/index.js prod",
+    "dev": "nodemon dev"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@graphprotocol/graph-ts": "^0.20.0",
-    "@openzeppelin/subgraphs": "^0.1.2",
     "@types/axios": "^0.14.0",
     "axios": "^0.21.4",
     "body-parser": "^1.19.0",
