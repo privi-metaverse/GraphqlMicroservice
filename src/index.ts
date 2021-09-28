@@ -7,8 +7,10 @@ import { initContracts } from './utils/firebase';
 import userRoute from './routes/user';
 
 require('dotenv').config({ path: __dirname + '/../.env' })
+const env: string = process.argv[2];
 
 initContracts();
+
 
 const startServer = () => {
   const port = process.env.PORT || 3006;
@@ -46,13 +48,17 @@ const startServer = () => {
   // Routes
   app.use("/user", userRoute);
 
-  // For local dev
-  const server = require("http").createServer(app);
-  server.listen(port, () => {
-    console.log(`Back-end DEV (Non-SSL) running on port ${port}`);
-  });
-
-
+  if (env === "prod") { // For local prod
+    const server = require("https").createServer(app);
+    server.listen(port, () => {
+      console.log(`Back-end PROD (Non-SSL) running on port ${port}`);
+    });
+  } else { // For local dev
+    const server = require("http").createServer(app);
+    server.listen(port, () => {
+      console.log(`Back-end DEV (Non-SSL) running on port ${port}`);
+    });
+  }
 };
 
 startServer();
