@@ -1,7 +1,7 @@
 import express from "express";
 import Moralis from 'moralis/node';
 
-import { db, stringContainsArrayItem } from '../utils/firebase';
+import { db } from '../utils/firebase';
 import collections from '../utils/collections';
 
 export const storeUserNFTsFromMoralis = async (req: express.Request, res: express.Response) => {
@@ -59,7 +59,6 @@ export const storeUserNFTsFromMoralis = async (req: express.Request, res: expres
       const userEthNFTs: any = userEthNFTResult[i];
 
       if (userEthNFTs) {
-        const allowedExtensions: string[] = ['.mp4', '.mp3', '.jpg', 'jpeg', '.png', '.ogg', '.tiff', '.tif', '.bmp', '.wav', '.aac', '.flac', '.gif', 'ipfs://'];
 
         for (const nft of userEthNFTs.result) {
           const ob: any = { ...nft, chainsFullName: settings.chainsFullName[i] };
@@ -69,11 +68,7 @@ export const storeUserNFTsFromMoralis = async (req: express.Request, res: expres
 
             if (nft.metadata) {
               // Check for various NFT format fields in metadata (image, animation)
-              if (
-                'animation_url' in nft.metadata &&
-                nft.metadata.animation_url &&
-                stringContainsArrayItem(nft.metadata.animation_url, allowedExtensions)
-              ) {
+              if ( 'animation_url' in nft.metadata && nft.metadata.animation_url) {
                 if (nft.metadata.animation_url.includes('ipfs://')) {
                   nft.metadata.animation_url = nft.metadata.animation_url.replace('ipfs://', 'https://ipfs.io/ipfs/');
                 }
@@ -81,11 +76,7 @@ export const storeUserNFTsFromMoralis = async (req: express.Request, res: expres
                 dataFound = true;
               }
 
-              if (
-                'image' in nft.metadata &&
-                nft.metadata.image &&
-                stringContainsArrayItem(nft.metadata.image, allowedExtensions)
-              ) {
+              if ('image' in nft.metadata && nft.metadata.image) {
                 if (nft.metadata.image.includes('ipfs://')) {
                   nft.metadata.image = nft.metadata.image.replace('ipfs://', 'https://ipfs.io/ipfs/');
                 }
@@ -100,15 +91,6 @@ export const storeUserNFTsFromMoralis = async (req: express.Request, res: expres
           } catch (err) {
             console.log('cant parse metadata from ERC721 NFT, error: ' + err);
             res.send({ success: false, message: "Can't parse metadata from ERC721 NFT" });
-          }
-
-          // If data was not found in metadata, maybe it's in token_uri
-          if (!dataFound && nft.token_uri != null && stringContainsArrayItem(nft.token_uri, allowedExtensions)) {
-            if (nft.token_uri.includes('ipfs://')) {
-              nft.token_uri.replace('ipfs://', 'https://ipfs.io/ipfs/');
-            }
-            ob.content_url = nft.token_uri;
-            userNFTsWithData.push(ob);
           }
         }
       }
