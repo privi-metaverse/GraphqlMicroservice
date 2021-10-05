@@ -29,11 +29,8 @@
     "@babel/preset-typescript": "^7.15.0",
     "@types/cors": "^2.8.12",
     "@types/dotenv": "^8.2.0",
-    "@types/jest": "^27.0.2",
     "@types/morgan": "^1.9.3",
-    "@types/node": "^16.10.2",
-    "jest": "^27.1.0",
-    "ts-jest": "^27.0.5"
+    "jest": "^27.1.0"
   },
   "engines": {
     "node": "14.16.1"
