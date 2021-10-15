@@ -227,12 +227,15 @@ const launchNewTokenReceivedListener = (
       endpoint = process.env.MUMBAI_PROVIDER_URL;
       break;
   }
-  const provider = new ethers.providers.JsonRpcProvider(endpoint);
+  let provider;
+  if (endpoint.substr(0, 1) === 'h')
+    provider = new ethers.providers.JsonRpcProvider(endpoint);
+  else if (endpoint.substr(0, 1) === 'w')
+    provider = new ethers.providers.WebSocketProvider(endpoint);
+  else return;
 
   return provider.on('block', async (blockNumber) => {
     const hexBlockNumber = converter.decToHex(String(blockNumber));
-    console.log(`Block ${blockNumber} or ${hexBlockNumber} from ${network}`);
-
     const nftsReceived = await getErc721TokensReceived(
       hexBlockNumber,
       userAddress,
@@ -264,7 +267,6 @@ export const storeUserNFTsFromMoralis = async (
     }
 
     const { address: userAddress } = userData;
-    // const userAddress = '0x714c282332fefc5efab73e34052de21b6b340a59';
     const settings = getSettings(mainnet);
 
     initializeMoralis(settings);

@@ -56,7 +56,13 @@ function fetchErc721TranfersLogs(blockNumber, address, endpoint) {
 }
 
 function isErc721(address, endpoint) {
-  const provider = new ethers.providers.JsonRpcProvider(endpoint);
+  let provider;
+  if (endpoint.substr(0, 1) === 'h')
+    provider = new ethers.providers.JsonRpcProvider(endpoint);
+  else if (endpoint.substr(0, 1) === 'w')
+    provider = new ethers.providers.WebSocketProvider(endpoint);
+  else return;
+
   return new Promise((resolve, reject) => {
     const contract = new ethers.Contract(address, erc165Interface, provider);
     contract
@@ -103,7 +109,13 @@ async function fetchErc721Metadata(address, id, provider) {
 }
 
 async function formatDataFromErc721TransferLog(log, endpoint) {
-  const provider = new ethers.providers.JsonRpcProvider(endpoint);
+  let provider;
+  if (endpoint.substr(0, 1) === 'h')
+    provider = new ethers.providers.JsonRpcProvider(endpoint);
+  else if (endpoint.substr(0, 1) === 'w')
+    provider = new ethers.providers.WebSocketProvider(endpoint);
+  else return;
+
   const { address: token_address, topics } = log;
   const token_id = parseInt(topics[3], 16);
   return {
@@ -128,6 +140,6 @@ export async function getErc721TokensReceived(hexBlock, userAddress, endpoint) {
       async (log) => await formatDataFromErc721TransferLog(log, endpoint)
     );
   } catch (err) {
-    console.log(err);
+    console.log('Log request failed, likely because of the node answer');
   }
 }
