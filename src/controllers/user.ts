@@ -69,6 +69,8 @@ const sanitizeIfIpfsUrl = (url) => {
 const filterNftsWithImage = (nfts, chain) => {
   return nfts
     .map((nft) => {
+      const parsedNft = Object.assign(nft);
+
       const nftWithData = {
         ...nft,
         chainsFullName: chain,
@@ -77,25 +79,29 @@ const filterNftsWithImage = (nfts, chain) => {
       let dataFound = false;
 
       try {
-        nft.metadata = JSON.parse(nft.metadata);
+        parsedNft.metadata = JSON.parse(nft.metadata);
       } catch (err) {
         console.log('cant parse metadata from ERC721 NFT, error: ' + err);
         return null;
       }
 
-      if (!nft.metadata) {
+      if (!parsedNft.metadata) {
         return null;
       }
 
       // Check for various NFT format fields in metadata (image, animation)
-      if ('animation_url' in nft.metadata && nft.metadata.animation_url) {
+      if (
+        'animation_url' in parsedNft.metadata &&
+        parsedNft.metadata.animation_url
+      ) {
         nftWithData.animation_url = sanitizeIfIpfsUrl(
-          nft.metadata.animation_url
+          parsedNft.metadata.animation_url
         );
         dataFound = true;
       }
-      if ('image' in nft.metadata && nft.metadata.image) {
-        nftWithData.content_url = sanitizeIfIpfsUrl(nft.metadata.image);
+
+      if ('image' in parsedNft.metadata && parsedNft.metadata.image) {
+        nftWithData.content_url = sanitizeIfIpfsUrl(parsedNft.metadata.image);
         dataFound = true;
       }
 
@@ -114,10 +120,11 @@ const writeNftsIntoDb = async (uid, userNFTsWithData, settings) => {
 
   for (const nft of userNFTsWithData) {
     if (!nft) continue;
+
     // Fills the collection data
     // if we did now already processed this nft
     if (!createdCollections.includes(nft.token_address)) {
-      const nftCollectionData = fetchDocumentFromDb(
+      const nftCollectionData = await fetchDocumentFromDb(
         settings.masterCollection,
         nft.token_address
       );
@@ -133,8 +140,10 @@ const writeNftsIntoDb = async (uid, userNFTsWithData, settings) => {
             }
           );
         });
+        createdCollections.push(nft.token_address);
+      } else {
+        createdCollections.push(nft.token_address);
       }
-      createdCollections.push(nft.token_address);
     }
 
     // Fills the nft data
@@ -227,6 +236,7 @@ const launchNewTokenReceivedListener = (
       endpoint = process.env.MUMBAI_PROVIDER_URL;
       break;
   }
+
   let provider;
   if (endpoint.substr(0, 1) === 'h')
     provider = new ethers.providers.JsonRpcProvider(endpoint);
@@ -284,6 +294,7 @@ export const storeUserNFTsFromMoralis = async (
       }
 
       userNFTsWithData = [
+        ...userNFTsWithData,
         ...filterNftsWithImage(
           reponseForCurrentNetwork.result,
           settings.chainsFullName[i]
