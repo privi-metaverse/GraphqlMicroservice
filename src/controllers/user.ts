@@ -2,6 +2,7 @@ import express from 'express';
 import Moralis from 'moralis/node';
 const { ethers } = require('ethers');
 var converter = require('hex2dec');
+import axios from 'axios';
 
 import { getErc721TokensReceived } from '../logic/nftTransferListener';
 import { db } from '../utils/firebase';
@@ -66,52 +67,57 @@ const sanitizeIfIpfsUrl = (url) => {
   return url;
 };
 
-const filterNftsWithImage = (nfts, chain) => {
-  return nfts
-    .map((nft) => {
-      const parsedNft = Object.assign(nft);
+const filterNftsWithImage = async (nfts, chain) => {
+  const promises = nfts.map(async (nft) => {
+    const nftWithData = {
+      ...nft,
+      chainsFullName: chain,
+    };
 
-      const nftWithData = {
-        ...nft,
-        chainsFullName: chain,
+    let dataFound = false;
+
+    let metadata = nft.metadata;
+
+    if (!metadata) {
+      const response = await axios.get(nft.token_uri);
+      metadata = response.data;
+    }
+
+    try {
+      if (typeof metadata === 'string') {
+        metadata = JSON.parse(metadata);
+      }
+    } catch (err) {
+      console.log('cant parse metadata from ERC721 NFT, error: ' + err);
+      return null;
+    }
+
+    // Check for various NFT format fields in metadata (image, animation)
+    if ('animation_url' in metadata && metadata.animation_url) {
+      nftWithData.animation_url = sanitizeIfIpfsUrl(metadata.animation_url);
+      dataFound = true;
+    }
+
+    if ('image' in metadata && metadata.image) {
+      nftWithData.content_url = sanitizeIfIpfsUrl(metadata.image);
+      dataFound = true;
+    }
+
+    if (dataFound) {
+      return {
+        ...nftWithData,
+        metadata:
+          typeof metadata !== 'string' ? JSON.stringify(metadata) : metadata,
       };
+    }
 
-      let dataFound = false;
+    return null;
+  });
+  const filteredNfts = await Promise.all(promises);
 
-      try {
-        parsedNft.metadata = JSON.parse(nft.metadata);
-      } catch (err) {
-        console.log('cant parse metadata from ERC721 NFT, error: ' + err);
-        return null;
-      }
-
-      if (!parsedNft.metadata) {
-        return null;
-      }
-
-      // Check for various NFT format fields in metadata (image, animation)
-      if (
-        'animation_url' in parsedNft.metadata &&
-        parsedNft.metadata.animation_url
-      ) {
-        nftWithData.animation_url = sanitizeIfIpfsUrl(
-          parsedNft.metadata.animation_url
-        );
-        dataFound = true;
-      }
-
-      if ('image' in parsedNft.metadata && parsedNft.metadata.image) {
-        nftWithData.content_url = sanitizeIfIpfsUrl(parsedNft.metadata.image);
-        dataFound = true;
-      }
-
-      if (dataFound) {
-        return nftWithData;
-      }
-    })
-    .filter((element) => {
-      if (element !== null) return element;
-    });
+  return filteredNfts.filter((element) => {
+    if (element !== null) return element;
+  });
 };
 
 const writeNftsIntoDb = async (uid, userNFTsWithData, settings) => {
@@ -121,6 +127,9 @@ const writeNftsIntoDb = async (uid, userNFTsWithData, settings) => {
   for (const nft of userNFTsWithData) {
     if (!nft) continue;
 
+    if (!nft.token_address) {
+      console.log(nft);
+    }
     // Fills the collection data
     // if we did now already processed this nft
     if (!createdCollections.includes(nft.token_address)) {
@@ -253,7 +262,9 @@ const launchNewTokenReceivedListener = (
     );
     if (!nftsReceived || nftsReceived.length === 0) return;
 
-    const userNFTsWithData = [...filterNftsWithImage(nftsReceived, network)];
+    const userNFTsWithData = [
+      ...(await filterNftsWithImage(nftsReceived, network)),
+    ];
     try {
       await writeNftsIntoDb(uid, userNFTsWithData, settings);
     } catch (err) {
@@ -295,11 +306,14 @@ export const storeUserNFTsFromMoralis = async (
 
       userNFTsWithData = [
         ...userNFTsWithData,
-        ...filterNftsWithImage(
+        ...(await filterNftsWithImage(
           reponseForCurrentNetwork.result,
           settings.chainsFullName[i]
-        ),
+        )),
       ];
+
+      console.log('////////////////////////210//////////////////');
+      console.log(userNFTsWithData);
     }
 
     await writeNftsIntoDb(uid, userNFTsWithData, settings);
